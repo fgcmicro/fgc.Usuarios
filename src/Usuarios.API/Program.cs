@@ -33,6 +33,7 @@ using Usuarios.Infrastructure.Helpers;
 using static Usuarios.API.Constants.AppConstants;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls("http://*:80");
 var env = builder.Environment;
 
 // Add services to the container.
