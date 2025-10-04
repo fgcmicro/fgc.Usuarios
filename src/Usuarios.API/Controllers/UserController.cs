@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Usuarios.API.Constants;
 using Usuarios.Application.Dto;
 using Usuarios.Application.Interfaces;
 
@@ -18,6 +20,7 @@ public class UserController(ILogger<UserController> logger, IUserApplicationServ
     [HttpPost]
     [Produces("application/json")]
     [ProducesResponseType(typeof(User), StatusCodes.Status200OK)]
+    [Authorize(Policy = AppConstants.Policies.Admin)]
     public async Task<object> Create([FromBody] GuestUser user)
     {
         var entity = await _userApplicationService.Add(user);
