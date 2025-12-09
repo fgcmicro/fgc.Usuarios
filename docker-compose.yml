@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: usuarios-postgres
+    environment:
+      POSTGRES_DB: fcgames
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: usuarios-api
+    ports:
+      - "8080:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DatabaseProvider=PostgreSql
+      - ConnectionStrings__PostgreSql=Host=postgres;Port=5432;Database=fcgames;Username=postgres;Password=postgres123;
+      - Jwt__Key=7G+H65bLToXxqzPvj7+q0oQUlxJp1WvdOU3nv3ArA1s=
+      - Jwt__ExpirationTimeHour=5
+      - Jwt__IncreaseExpirationTimeMinutes=20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local

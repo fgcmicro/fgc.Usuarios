@@ -1,0 +1,125 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: usuarios-api
+  APP_RUNNER_SERVICE: usuarios-api-service
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to AWS
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build Docker image
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        # Push to ECR
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Deploy to App Runner
+      id: deploy-apprunner
+      run: |
+        SERVICE_ARN=$(aws apprunner list-services \
+          --region ${{ env.AWS_REGION }} \
+          --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE }}'].ServiceArn" \
+          --output text)
+        
+        if [ -n "$SERVICE_ARN" ]; then
+          echo "Deploying to App Runner service: $SERVICE_ARN"
+          aws apprunner start-deployment \
+            --service-arn $SERVICE_ARN \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "deployment-started=true" >> $GITHUB_OUTPUT
+          echo "service-arn=$SERVICE_ARN" >> $GITHUB_OUTPUT
+        else
+          echo "App Runner service not found. Please create it manually first."
+          echo "deployment-started=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Wait for deployment
+      if: steps.deploy-apprunner.outputs.deployment-started == 'true'
+      run: |
+        echo "Waiting for deployment to complete..."
+        SERVICE_ARN="${{ steps.deploy-apprunner.outputs.service-arn }}"
+        
+        for i in {1..30}; do
+          STATUS=$(aws apprunner describe-service \
+            --service-arn $SERVICE_ARN \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Service.Status' \
+            --output text)
+          
+          echo "Current status: $STATUS"
+          
+          if [ "$STATUS" == "RUNNING" ]; then
+            echo "✅ Deployment completed successfully!"
+            break
+          elif [ "$STATUS" == "OPERATION_IN_PROGRESS" ]; then
+            echo "⏳ Deployment in progress... waiting 20 seconds"
+            sleep 20
+          else
+            echo "❌ Unexpected status: $STATUS"
+            exit 1
+          fi
+          
+          if [ $i -eq 30 ]; then
+            echo "⏱️ Timeout waiting for deployment"
+            exit 1
+          fi
+        done
+
+    - name: Get service URL
+      if: steps.deploy-apprunner.outputs.deployment-started == 'true'
+      run: |
+        SERVICE_ARN="${{ steps.deploy-apprunner.outputs.service-arn }}"
+        SERVICE_URL=$(aws apprunner describe-service \
+          --service-arn $SERVICE_ARN \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Service.ServiceUrl' \
+          --output text)
+        
+        echo "🌐 Application URL: https://$SERVICE_URL"
+        echo "📖 Swagger: https://$SERVICE_URL/swagger"
+
+    - name: Deployment summary
+      if: always()
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image:** ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

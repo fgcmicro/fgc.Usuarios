@@ -1,0 +1,27 @@
+AWS Resources for usuarios
+Created: Tue, Dec  9, 2025  1:36:01 AM
+
+RDS PostgreSQL:
+  Instance ID: usuarios-db
+  Endpoint: usuarios-db.c01u2egmohtp.us-east-1.rds.amazonaws.com
+  Database: fcgames
+  Username: postgres
+  Password: ChangeMe123!
+
+ECR Repository:
+  URI: 047421117149.dkr.ecr.us-east-1.amazonaws.com/usuarios-api
+
+Security Group:
+  ID: sg-0bc2f32607e9dce55
+
+IAM Role:
+  ARN: arn:aws:iam::047421117149:role/usuarios-apprunner-role
+
+Connection String:
+Host=usuarios-db.c01u2egmohtp.us-east-1.rds.amazonaws.com;Port=5432;Database=fcgames;Username=postgres;Password=ChangeMe123!;Ssl Mode=Require;
+
+ECS Fargate:
+  Cluster: usuarios-cluster
+  Service: usuarios-service
+  Public IP: 54.160.95.42
+  Task Definition: usuarios-task
