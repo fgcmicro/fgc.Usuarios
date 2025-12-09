@@ -10,7 +10,9 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: usuarios-api
-  APP_RUNNER_SERVICE: usuarios-api-service
+  ECS_CLUSTER: usuarios-cluster
+  ECS_SERVICE: usuarios-service
+  ECS_TASK_DEFINITION: usuarios-task
 
 jobs:
   build-and-deploy:
@@ -48,71 +50,80 @@ jobs:
         
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-    - name: Deploy to App Runner
-      id: deploy-apprunner
+    - name: Deploy to ECS Fargate
+      id: deploy-ecs
       run: |
-        SERVICE_ARN=$(aws apprunner list-services \
-          --region ${{ env.AWS_REGION }} \
-          --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE }}'].ServiceArn" \
-          --output text)
+        echo "Deploying to ECS Fargate..."
         
-        if [ -n "$SERVICE_ARN" ]; then
-          echo "Deploying to App Runner service: $SERVICE_ARN"
-          aws apprunner start-deployment \
-            --service-arn $SERVICE_ARN \
+        # Verificar se o serviço existe
+        SERVICE_EXISTS=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }} \
+          --query "services[0].serviceName" \
+          --output text 2>/dev/null || echo "None")
+        
+        if [ "$SERVICE_EXISTS" != "None" ]; then
+          echo "Updating ECS service with new image..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
             --region ${{ env.AWS_REGION }}
           
           echo "deployment-started=true" >> $GITHUB_OUTPUT
-          echo "service-arn=$SERVICE_ARN" >> $GITHUB_OUTPUT
         else
-          echo "App Runner service not found. Please create it manually first."
+          echo "❌ ECS service not found. Please run scripts/create-ecs-fargate.sh first."
           echo "deployment-started=false" >> $GITHUB_OUTPUT
+          exit 1
         fi
 
     - name: Wait for deployment
-      if: steps.deploy-apprunner.outputs.deployment-started == 'true'
+      if: steps.deploy-ecs.outputs.deployment-started == 'true'
       run: |
-        echo "Waiting for deployment to complete..."
-        SERVICE_ARN="${{ steps.deploy-apprunner.outputs.service-arn }}"
+        echo "⏳ Waiting for ECS deployment to stabilize..."
+        sleep 30
         
-        for i in {1..30}; do
-          STATUS=$(aws apprunner describe-service \
-            --service-arn $SERVICE_ARN \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Service.Status' \
-            --output text)
-          
-          echo "Current status: $STATUS"
-          
-          if [ "$STATUS" == "RUNNING" ]; then
-            echo "✅ Deployment completed successfully!"
-            break
-          elif [ "$STATUS" == "OPERATION_IN_PROGRESS" ]; then
-            echo "⏳ Deployment in progress... waiting 20 seconds"
-            sleep 20
-          else
-            echo "❌ Unexpected status: $STATUS"
-            exit 1
-          fi
-          
-          if [ $i -eq 30 ]; then
-            echo "⏱️ Timeout waiting for deployment"
-            exit 1
-          fi
-        done
-
-    - name: Get service URL
-      if: steps.deploy-apprunner.outputs.deployment-started == 'true'
-      run: |
-        SERVICE_ARN="${{ steps.deploy-apprunner.outputs.service-arn }}"
-        SERVICE_URL=$(aws apprunner describe-service \
-          --service-arn $SERVICE_ARN \
+        STATUS=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
           --region ${{ env.AWS_REGION }} \
-          --query 'Service.ServiceUrl' \
+          --query "services[0].deployments[0].rolloutState" \
           --output text)
         
-        echo "🌐 Application URL: https://$SERVICE_URL"
-        echo "📖 Swagger: https://$SERVICE_URL/swagger"
+        echo "Deployment status: $STATUS"
+
+    - name: Get service IP
+      if: steps.deploy-ecs.outputs.deployment-started == 'true'
+      run: |
+        echo "🔍 Getting public IP..."
+        
+        TASK_ARN=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }} \
+          --query "taskArns[0]" \
+          --output text)
+        
+        if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks $TASK_ARN \
+            --region ${{ env.AWS_REGION }} \
+            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+            --output text)
+          
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids $ENI_ID \
+            --region ${{ env.AWS_REGION }} \
+            --query "NetworkInterfaces[0].Association.PublicIp" \
+            --output text)
+          
+          echo "🌐 Application URL: http://$PUBLIC_IP"
+          echo "📖 Swagger: http://$PUBLIC_IP/swagger"
+        else
+          echo "⚠️  Task not ready yet. Check ECS console for IP."
+        fi
 
     - name: Deployment summary
       if: always()
