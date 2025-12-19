@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: usuarios
-        image: ${FULL_IMAGE}
+        image: ${DOCKER_IMAGE_FULL}
         ports:
         - containerPort: 80
           name: http

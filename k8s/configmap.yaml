@@ -7,7 +7,7 @@ metadata:
     app: usuarios
 data:
   AWS__Region: "us-east-1"
-  AWS__AccountId: "${ACC_ID}"
+  AWS__AccountId: "${AWS_ACCOUNT_ID}"
   PATH_BASE: "/api/usuarios"
   ASPNETCORE_URLS: "http://+:80"
   DOTNET_RUNNING_IN_CONTAINER: "true"

@@ -44,25 +44,25 @@ jobs:
             exit 1
           fi
           
-          FULL_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          echo "Building image: $FULL_IMAGE"
+          DOCKER_IMAGE_FULL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "Building image: $DOCKER_IMAGE_FULL"
           
-          docker build -t $FULL_IMAGE .
+          docker build -t $DOCKER_IMAGE_FULL .
           
           echo "Pushing image to ECR..."
-          docker push $FULL_IMAGE
+          docker push $DOCKER_IMAGE_FULL
           
-          echo "FULL_IMAGE=$FULL_IMAGE" >> $GITHUB_OUTPUT
-          echo "Image $FULL_IMAGE pushed successfully"
+          echo "DOCKER_IMAGE_FULL=$DOCKER_IMAGE_FULL" >> $GITHUB_OUTPUT
+          echo "Image $DOCKER_IMAGE_FULL pushed successfully"
 
       - name: Prepare K8s manifests
         env:
-          FULL_IMAGE: ${{ steps.build-push.outputs.FULL_IMAGE }}
-          POSTGRES_CONNECTION: ${{ secrets.USUARIOS_POSTGRES_CONNECTION }}
-          KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          KEY_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          ACC_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          DOCKER_IMAGE_FULL: ${{ steps.build-push.outputs.DOCKER_IMAGE_FULL }}
+          DATABASE_POSTGRES_CONNECTION_STRING: ${{ secrets.USUARIOS_POSTGRES_CONNECTION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           JWT_KEY: ${{ secrets.JWT_KEY }}
           JWT_EXPIRATION_TIME_HOUR: ${{ secrets.JWT_EXPIRATION_TIME_HOUR }}
           JWT_INCREASE_EXPIRATION_TIME_MINUTES: ${{ secrets.JWT_INCREASE_EXPIRATION_TIME_MINUTES }}
@@ -70,25 +70,25 @@ jobs:
           set -e
           
           echo "Validando variáveis obrigatórias..."
-          if [ -z "$FULL_IMAGE" ]; then
-            echo "ERRO: FULL_IMAGE não está definido"
+          if [ -z "$DOCKER_IMAGE_FULL" ]; then
+            echo "ERRO: DOCKER_IMAGE_FULL não está definido"
             exit 1
           fi
-          if [ -z "$POSTGRES_CONNECTION" ]; then
-            echo "ERRO: POSTGRES_CONNECTION não está definido"
+          if [ -z "$DATABASE_POSTGRES_CONNECTION_STRING" ]; then
+            echo "ERRO: DATABASE_POSTGRES_CONNECTION_STRING não está definido"
             exit 1
           fi
-          if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ] || [ -z "$KEY_TOKEN" ]; then
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then
             echo "ERRO: Credenciais AWS não estão definidas"
             exit 1
           fi
-          if [ -z "$ACC_ID" ]; then
-            echo "ERRO: ACC_ID não está definido"
+          if [ -z "$AWS_ACCOUNT_ID" ]; then
+            echo "ERRO: AWS_ACCOUNT_ID não está definido"
             exit 1
           fi
           
           mkdir -p k8s/usuarios/processed
-          export FULL_IMAGE POSTGRES_CONNECTION KEY_ID KEY_SECRET KEY_TOKEN ACC_ID JWT_KEY JWT_EXPIRATION_TIME_HOUR JWT_INCREASE_EXPIRATION_TIME_MINUTES
+          export DOCKER_IMAGE_FULL DATABASE_POSTGRES_CONNECTION_STRING AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_ACCOUNT_ID JWT_KEY JWT_EXPIRATION_TIME_HOUR JWT_INCREASE_EXPIRATION_TIME_MINUTES
           
           echo "Processando arquivos YAML..."
           if command -v envsubst >/dev/null 2>&1; then
@@ -96,25 +96,25 @@ jobs:
             envsubst < k8s/secret.yaml > k8s/usuarios/processed/secret.yaml
             envsubst < k8s/deployment.yaml > k8s/usuarios/processed/deployment.yaml
           else
-            sed -e "s|\${FULL_IMAGE}|${FULL_IMAGE}|g" \
-                -e "s|\${POSTGRES_CONNECTION}|${POSTGRES_CONNECTION}|g" \
-                -e "s|\${KEY_ID}|${KEY_ID}|g" \
-                -e "s|\${KEY_SECRET}|${KEY_SECRET}|g" \
-                -e "s|\${KEY_TOKEN}|${KEY_TOKEN}|g" \
-                -e "s|\${ACC_ID}|${ACC_ID}|g" \
+            sed -e "s|\${DOCKER_IMAGE_FULL}|${DOCKER_IMAGE_FULL}|g" \
+                -e "s|\${DATABASE_POSTGRES_CONNECTION_STRING}|${DATABASE_POSTGRES_CONNECTION_STRING}|g" \
+                -e "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g" \
+                -e "s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" \
+                -e "s|\${AWS_SESSION_TOKEN}|${AWS_SESSION_TOKEN}|g" \
+                -e "s|\${AWS_ACCOUNT_ID}|${AWS_ACCOUNT_ID}|g" \
                 -e "s|\${JWT_KEY}|${JWT_KEY}|g" \
                 -e "s|\${JWT_EXPIRATION_TIME_HOUR}|${JWT_EXPIRATION_TIME_HOUR}|g" \
                 -e "s|\${JWT_INCREASE_EXPIRATION_TIME_MINUTES}|${JWT_INCREASE_EXPIRATION_TIME_MINUTES}|g" \
                 k8s/configmap.yaml > k8s/usuarios/processed/configmap.yaml
-            sed -e "s|\${POSTGRES_CONNECTION}|${POSTGRES_CONNECTION}|g" \
-                -e "s|\${KEY_ID}|${KEY_ID}|g" \
-                -e "s|\${KEY_SECRET}|${KEY_SECRET}|g" \
-                -e "s|\${KEY_TOKEN}|${KEY_TOKEN}|g" \
+            sed -e "s|\${DATABASE_POSTGRES_CONNECTION_STRING}|${DATABASE_POSTGRES_CONNECTION_STRING}|g" \
+                -e "s|\${AWS_ACCESS_KEY_ID}|${AWS_ACCESS_KEY_ID}|g" \
+                -e "s|\${AWS_SECRET_ACCESS_KEY}|${AWS_SECRET_ACCESS_KEY}|g" \
+                -e "s|\${AWS_SESSION_TOKEN}|${AWS_SESSION_TOKEN}|g" \
                 -e "s|\${JWT_KEY}|${JWT_KEY}|g" \
                 -e "s|\${JWT_EXPIRATION_TIME_HOUR}|${JWT_EXPIRATION_TIME_HOUR}|g" \
                 -e "s|\${JWT_INCREASE_EXPIRATION_TIME_MINUTES}|${JWT_INCREASE_EXPIRATION_TIME_MINUTES}|g" \
                 k8s/secret.yaml > k8s/usuarios/processed/secret.yaml
-            sed -e "s|\${FULL_IMAGE}|${FULL_IMAGE}|g" \
+            sed -e "s|\${DOCKER_IMAGE_FULL}|${DOCKER_IMAGE_FULL}|g" \
                 k8s/deployment.yaml > k8s/usuarios/processed/deployment.yaml
           fi
           
