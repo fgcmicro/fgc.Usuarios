@@ -38,6 +38,7 @@ var env = builder.Environment;
 
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
+var pathBase = Environment.GetEnvironmentVariable("PATH_BASE");
 
 builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
                    .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: true);
@@ -126,6 +127,14 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+    
+    if (!string.IsNullOrEmpty(pathBase))
+    {
+        c.AddServer(new OpenApiServer
+        {
+            Url = pathBase.TrimEnd('/')
+        });
+    }
 });
 
 builder.Services.AddHealthChecks();
@@ -194,8 +203,19 @@ app.MapMetrics();
 //    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "FCGames API v1"));
 //}
 
-app.UseSwagger();
-app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "FCGUser API v1"));
+app.UseSwagger(c =>
+{
+    c.RouteTemplate = "swagger/{documentName}/swagger.json";
+});
+
+app.UseSwaggerUI(c =>
+{
+    var swaggerPath = string.IsNullOrEmpty(pathBase) 
+        ? "./v1/swagger.json" 
+        : $"{pathBase.TrimEnd('/')}/swagger/v1/swagger.json";
+    c.SwaggerEndpoint(swaggerPath, "FCGUser API v1");
+    c.RoutePrefix = "swagger";
+});
 
 using (var scope = app.Services.CreateScope())
 {
