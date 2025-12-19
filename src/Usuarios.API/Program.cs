@@ -13,6 +13,8 @@ using Newtonsoft.Json.Serialization;
 using Npgsql;
 using Prometheus;
 using Usuarios.API.Authorization;
+using Usuarios.API.Services;
+using Amazon.XRay.Recorder.Handlers.AspNetCore;
 using Usuarios.API.Filters;
 using Usuarios.API.Logs;
 using Usuarios.API.Middlewares;
@@ -177,6 +179,12 @@ builder.Services.AddScoped<ITokenApplicationService, TokenApplicationService>();
 
 #endregion
 
+#region AWS X-Ray APM
+
+builder.Services.AddXRay(builder.Configuration);
+
+#endregion
+
 #region Authorization
 
 builder.Services.AddSingleton<IAuthorizationHandler, RolesAuthorizationHandler>();
@@ -246,6 +254,10 @@ using (var scope = app.Services.CreateScope())
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseHttpsRedirection();
+
+// AWS X-Ray middleware para APM
+app.UseXRay("fcg-users-api");
+
 app.UseAuthorization();
 app.MapControllers();
 

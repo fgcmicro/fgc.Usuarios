@@ -22,6 +22,9 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
     <PackageReference Include="Z.EntityFramework.Extensions.EFCore" Version="8.101.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="8.0.0" />
+    <PackageReference Include="AWSXRayRecorder.Handlers.AspNetCore" Version="2.13.0" />
+    <PackageReference Include="AWSXRayRecorder.Handlers.System.Net" Version="2.13.0" />
+    <PackageReference Include="AWSXRayRecorder.Handlers.EntityFramework" Version="1.6.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,3 +13,5 @@ data:
   DOTNET_RUNNING_IN_CONTAINER: "true"
   DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
   DatabaseProvider: "PostgreSql"
+  XRay__ServiceName: "fcg-users-api"
+  XRay__TracingDisabled: "false"
