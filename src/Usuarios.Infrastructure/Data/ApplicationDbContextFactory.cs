@@ -22,7 +22,7 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
 
         Console.WriteLine($"Using {provider} provider");
 
-        var connectionString = configuration.GetConnectionString("PostgreSql");
+        var connectionString = configuration.GetConnectionString("Postgres");
         options.UseNpgsql(connectionString, x =>
         {
             x.MigrationsHistoryTable("__EFMigrationsHistory", "public");

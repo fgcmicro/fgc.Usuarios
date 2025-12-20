@@ -16,7 +16,7 @@ public class PostgreSqlDbContextFactory : IDesignTimeDbContextFactory<Applicatio
 
         var options = new DbContextOptionsBuilder<ApplicationDbContext>();
 
-        var connectionString = configuration.GetConnectionString("PostgreSql");
+        var connectionString = configuration.GetConnectionString("Postgres");
         options.UseNpgsql(connectionString, x =>
         {
             x.MigrationsHistoryTable("__EFMigrationsHistory", "public");
