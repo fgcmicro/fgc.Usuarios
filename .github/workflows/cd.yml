@@ -262,35 +262,52 @@ jobs:
         run: |
           set -e
           
+          # Criar namespace se não existir
           if [ -f k8s/usuarios/processed/namespace.yaml ]; then
             kubectl apply -f k8s/usuarios/processed/namespace.yaml
           else
-            kubectl create namespace usuarios --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create namespace users --dry-run=client -o yaml | kubectl apply -f -
           fi
+          
+          # Aguardar namespace estar disponível (evita condição de corrida)
+          echo "⏳ Aguardando namespace 'users' estar disponível..."
+          for i in {1..30}; do
+            if kubectl get namespace users >/dev/null 2>&1; then
+              echo "✅ Namespace 'users' está disponível"
+              break
+            else
+              if [ $i -eq 30 ]; then
+                echo "❌ ERRO: Namespace 'users' não está disponível após 30 tentativas"
+                exit 1
+              fi
+              echo "⏳ Aguardando namespace... ($i/30)"
+              sleep 1
+            fi
+          done
           
           if [ -z "$ECR_REGISTRY" ]; then
             ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           fi
           
-          kubectl delete secret ecr-secret -n usuarios 2>/dev/null || true
+          kubectl delete secret ecr-secret -n users 2>/dev/null || true
           
           TOKEN=$(aws ecr get-login-password --region $AWS_REGION) || exit 1
           kubectl create secret docker-registry ecr-secret \
             --docker-server="$ECR_REGISTRY" \
             --docker-username=AWS \
             --docker-password="$TOKEN" \
-            --namespace=usuarios || exit 1
+            --namespace=users || exit 1
           
-          CURRENT_IMAGE=$(kubectl get deployment usuarios-deployment -n usuarios -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+          CURRENT_IMAGE=$(kubectl get deployment usuarios-deployment -n users -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
           NEW_IMAGE=$(grep "image:" k8s/usuarios/processed/deployment.yaml | awk '{print $2}' | tr -d '"')
           
           CONFIGMAP_CHANGED=false
           SECRET_CHANGED=false
           
-          if kubectl get configmap usuarios-config -n usuarios >/dev/null 2>&1; then
-            OLD_CONFIGMAP=$(kubectl get configmap usuarios-config -n usuarios -o yaml | grep -A 100 "^data:" | sort)
+          if kubectl get configmap usuarios-config -n users >/dev/null 2>&1; then
+            OLD_CONFIGMAP=$(kubectl get configmap usuarios-config -n users -o yaml | grep -A 100 "^data:" | sort)
             kubectl apply -f k8s/usuarios/processed/configmap.yaml >/dev/null 2>&1
-            NEW_CONFIGMAP=$(kubectl get configmap usuarios-config -n usuarios -o yaml | grep -A 100 "^data:" | sort)
+            NEW_CONFIGMAP=$(kubectl get configmap usuarios-config -n users -o yaml | grep -A 100 "^data:" | sort)
             if [ "$OLD_CONFIGMAP" != "$NEW_CONFIGMAP" ]; then
               CONFIGMAP_CHANGED=true
               echo "🔄 ConfigMap mudou. Deployment será reiniciado."
@@ -301,10 +318,10 @@ jobs:
             echo "🆕 ConfigMap criado. Deployment será reiniciado."
           fi
           
-          if kubectl get secret usuarios-secret -n usuarios >/dev/null 2>&1; then
-            OLD_SECRET=$(kubectl get secret usuarios-secret -n usuarios -o yaml | grep -A 100 "^data:" | sort)
+          if kubectl get secret usuarios-secret -n users >/dev/null 2>&1; then
+            OLD_SECRET=$(kubectl get secret usuarios-secret -n users -o yaml | grep -A 100 "^data:" | sort)
             kubectl apply -f k8s/usuarios/processed/secret.yaml >/dev/null 2>&1
-            NEW_SECRET=$(kubectl get secret usuarios-secret -n usuarios -o yaml | grep -A 100 "^data:" | sort)
+            NEW_SECRET=$(kubectl get secret usuarios-secret -n users -o yaml | grep -A 100 "^data:" | sort)
             if [ "$OLD_SECRET" != "$NEW_SECRET" ]; then
               SECRET_CHANGED=true
               echo "🔄 Secret mudou. Deployment será reiniciado."
@@ -323,8 +340,8 @@ jobs:
           if [ -f k8s/usuarios/processed/middleware.yaml ]; then
             if kubectl get crd middlewares.traefik.containo.us >/dev/null 2>&1; then
 
-              kubectl delete middleware stripprefix -n usuarios --ignore-not-found
-              kubectl delete middleware usuarios-stripprefix -n usuarios --ignore-not-found
+              kubectl delete middleware stripprefix -n users --ignore-not-found
+              kubectl delete middleware usuarios-stripprefix -n users --ignore-not-found
   
               echo "✅ Aplicando middleware do Traefik..."
               if kubectl apply -f k8s/usuarios/processed/middleware.yaml; then
@@ -332,11 +349,11 @@ jobs:
                 echo "⏳ Aguardando middleware ficar disponível..."
                 sleep 5
                 
-                if kubectl get middleware usuarios-strip -n usuarios >/dev/null 2>&1; then
+                if kubectl get middleware usuarios-strip -n users >/dev/null 2>&1; then
                   echo "✅ Middleware usuarios-strip confirmado no cluster"
                 else
                   echo "⚠️  Middleware não encontrado após aplicação. Verificando..."
-                  kubectl get middleware -n usuarios
+                  kubectl get middleware -n users
                 fi
               else
                 echo "⚠️  Erro ao aplicar middleware. Continuando sem ele..."
@@ -532,8 +549,8 @@ jobs:
           
           SKIP_ROLLOUT=false
           if [ -n "$CURRENT_IMAGE" ] && [ "$CURRENT_IMAGE" = "$NEW_IMAGE" ] && [ "$CONFIGMAP_CHANGED" = "false" ] && [ "$SECRET_CHANGED" = "false" ]; then
-            READY=$(kubectl get deployment usuarios-deployment -n usuarios -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-            DESIRED=$(kubectl get deployment usuarios-deployment -n usuarios -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+            READY=$(kubectl get deployment usuarios-deployment -n users -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            DESIRED=$(kubectl get deployment usuarios-deployment -n users -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
             if [ "$READY" = "$DESIRED" ] && [ "$READY" != "0" ]; then
               echo "ℹ️  Deployment já está pronto. Nenhuma mudança detectada."
               SKIP_ROLLOUT=true
@@ -543,36 +560,36 @@ jobs:
           if [ "$SKIP_ROLLOUT" = "false" ]; then
             if [ -n "$CURRENT_IMAGE" ] && [ "$CURRENT_IMAGE" != "$NEW_IMAGE" ]; then
               echo "🔄 Imagem mudou. Reiniciando deployment..."
-              kubectl rollout restart deployment/usuarios-deployment -n usuarios
+              kubectl rollout restart deployment/usuarios-deployment -n users
             elif [ "$CONFIGMAP_CHANGED" = "true" ] || [ "$SECRET_CHANGED" = "true" ]; then
               echo "🔄 ConfigMap ou Secret mudou. Reiniciando deployment para aplicar mudanças..."
-              kubectl rollout restart deployment/usuarios-deployment -n usuarios
+              kubectl rollout restart deployment/usuarios-deployment -n users
             else
               echo "🔄 Aguardando deployment ficar pronto..."
             fi
           fi
           
-          if ! kubectl rollout status deployment/usuarios-deployment -n usuarios --timeout=300s; then
+          if ! kubectl rollout status deployment/usuarios-deployment -n users --timeout=300s; then
             echo "ERRO: Rollout falhou ou timeout"
             echo ""
             echo "=== Status dos pods ==="
-            kubectl get pods -n usuarios -o wide
+            kubectl get pods -n users -o wide
             echo ""
             echo "=== Descrição do deployment ==="
-            kubectl describe deployment usuarios-deployment -n usuarios
+            kubectl describe deployment usuarios-deployment -n users
             echo ""
             echo "=== Logs dos pods (últimos 50 linhas) ==="
-            for pod in $(kubectl get pods -n usuarios -l app=usuarios -o jsonpath='{.items[*].metadata.name}'); do
+            for pod in $(kubectl get pods -n users -l app=usuarios -o jsonpath='{.items[*].metadata.name}'); do
               echo "--- Logs do pod: $pod ---"
-              kubectl logs $pod -n usuarios --tail=50 || echo "Não foi possível obter logs do pod $pod"
+              kubectl logs $pod -n users --tail=50 || echo "Não foi possível obter logs do pod $pod"
               echo ""
               echo "--- Descrição do pod: $pod ---"
-              kubectl describe pod $pod -n usuarios | tail -30
+              kubectl describe pod $pod -n users | tail -30
               echo ""
             done
             echo ""
             echo "=== Eventos do namespace ==="
-            kubectl get events -n usuarios --sort-by='.lastTimestamp' | tail -20
+            kubectl get events -n users --sort-by='.lastTimestamp' | tail -20
             exit 1
           fi
           
@@ -685,28 +702,28 @@ jobs:
           
           echo ""
           echo "=== 4. STATUS DO SERVICE USUARIOS ==="
-          kubectl get svc usuarios-service -n usuarios
+          kubectl get svc usuarios-service -n users
           
           echo ""
           echo "=== 5. STATUS DO MIDDLEWARE ==="
           kubectl get middleware -A
-          kubectl get middleware -n usuarios 2>/dev/null || echo "Middleware não encontrado ou CRD não instalado"
-          if kubectl get middleware usuarios-strip -n usuarios >/dev/null 2>&1; then
+          kubectl get middleware -n users 2>/dev/null || echo "Middleware não encontrado ou CRD não instalado"
+          if kubectl get middleware usuarios-strip -n users >/dev/null 2>&1; then
             echo "✅ Middleware usuarios-strip encontrado:"
-            kubectl get middleware usuarios-strip -n usuarios -o yaml
+            kubectl get middleware usuarios-strip -n users -o yaml
           else
             echo "❌ Middleware usuarios-strip NÃO encontrado!"
           fi
           
           echo ""
           echo "=== 6. VERIFICAÇÃO DO INGRESS ==="
-          INGRESS=$(kubectl get ingress usuarios-ingress -n usuarios 2>/dev/null || echo "")
+          INGRESS=$(kubectl get ingress usuarios-ingress -n users 2>/dev/null || echo "")
           if [ -n "$INGRESS" ]; then
             echo "✅ Ingress encontrado:"
-            kubectl get ingress usuarios-ingress -n usuarios
+            kubectl get ingress usuarios-ingress -n users
             echo ""
             echo "Detalhes do Ingress:"
-            kubectl describe ingress usuarios-ingress -n usuarios
+            kubectl describe ingress usuarios-ingress -n users
           else
             echo "❌ Ingress não encontrado!"
           fi
@@ -714,12 +731,12 @@ jobs:
           echo ""
           echo "=== 7. TESTE DE CONECTIVIDADE ==="
           echo "Verificando se os pods do usuarios-service estão prontos..."
-          kubectl get pods -n usuarios -l app=usuarios
+          kubectl get pods -n users -l app=usuarios
           
           echo ""
           echo "Testando conectividade direta no service (port-forward)..."
           echo "Para testar manualmente:"
-          echo "  kubectl port-forward -n usuarios svc/usuarios-service 8080:80"
+          echo "  kubectl port-forward -n users svc/usuarios-service 8080:80"
           echo "  curl http://localhost:8080/"
           
           echo ""
